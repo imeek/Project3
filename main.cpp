@@ -210,6 +210,7 @@ int main() {
     unsigned long sample_rate = 150; //Msps
     unsigned long captured_samples = 1 << 10; //1024 samples
     
+    
     // number of bits data is sampled
     int bits = 14;
    
@@ -233,6 +234,8 @@ int main() {
     /* Signal Parameters */
     //float *f = (float*) malloc((sample_rate/2) * sizeof (float));
     float delta = 1/(float)sample_rate;
+    float T = 0, sigma_samp = 0, sigma_1sec = 0, sigma_1Hz = 0;
+    float var_samp = 0.0, N = 0.0, var_1sec = 0.0, var_1Hz = 0.0; 
     int depth = depthMax(bits);
     cout << "depth"<<TAB<<depth <<endl;
     int getmaxvalue = 0;
@@ -259,20 +262,30 @@ int main() {
         N_Phi[4][l] = 0.0;    
     }
     
+    float sigma_Phi[5][nf]; //variance phase
+    for (int l=0;l<nf;l++)
+    {
+        sigma_Phi[0][l] = 0.0;
+        sigma_Phi[1][l] = 0.0;
+        sigma_Phi[2][l] = 0.0;
+        sigma_Phi[3][l] = 0.0;
+        sigma_Phi[4][l] = 0.0;    
+    }
     
   //  double fft_length; 
     float Tseg[tsegments];
     float Tseg2[tsegments];
     
-    
+                
     for (int n=0 ;n<5 ;n++ )
     {
       
       //  fft_length = pow ( 2.0,(10+n) );
         captured_samples = 1 << (10+n);
-        
+        T = delta * captured_samples;
+        sigma_samp = 8;
         /* Simulation frequency */
-        freq = 0.0;
+        freq = 10.0;
         float *data = (float*) malloc((captured_samples) * sizeof (float));
         float *data2 = (float*) malloc((captured_samples) * sizeof (float));
         for (int j=0 ;j<nf ;j++ )
@@ -287,25 +300,32 @@ int main() {
                 
                 /* Generate Signal */
                 tone(data, captured_samples, freq, delta, t);
-                tone(data2, captured_samples, freq, delta, t);
-               // getmaxvalue = getMax(data,captured_samples);
+                // tone(data2, captured_samples, freq, delta, t); 
+                // can't do two tones with same function due to static constant
+                for(int k = 0.0; k< captured_samples; k++)     
+                    data2[k] = data[k];
+                
+                // getmaxvalue = getMax(data,captured_samples);
                 /* Quantise Data*/
                 
                 quantisation(data, captured_samples, 1 , depth );
 
-                /*Window data*/
+                /* Window data */
              
                 data[0] = 0.0;
                 for(int k = 1 ; k < captured_samples/2; k++) 
                 {
                     data[k] *= 2.0*(float)k/captured_samples;
                     data[captured_samples - k] *= 2.0*(float)k/captured_samples;
+                    data2[k] *= 2.0*(float)k/captured_samples;
+                    data2[captured_samples - k] *= 2.0*(float)k/captured_samples;
                 }
                 
                 /* FFT data */
                 realft(data-1, captured_samples, 1);
                 realft(data2-1, captured_samples, 1);
                 
+
                 /* Normalise FFT data */
                 for(int k = 0.0; k< captured_samples; k++)
                 {
@@ -330,14 +350,13 @@ int main() {
                   Im2 = data2[2*idx+1]; 
                 }
                 
-                
-                
                 ZRe = Re1*Re2 + Im1*Im2;
                 ZIm = Im1*Re2 - Re1*Im2;
-                if (freq == 0.0)
+                if (freq == 10.0)
                 {
                  cout << " ZRe " << TAB << ZRe <<endl; 
                  cout << " ZIm " << TAB << ZIm <<endl;
+                 
                 }
                 
                 Tseg[t] = sqrt(ZRe*ZRe+ZIm*ZIm);
@@ -352,8 +371,15 @@ int main() {
             // cout << "  " << TAB << <<endl;
             
             N_dBm[n][j] = log10( std_dev1(Tseg, tsegments)) + Noise_dBm;
-            N_Phi[n][j] = std_dev1(Tseg2, tsegments); 
+            var_samp = std_dev1(Tseg2, tsegments); //variance in radians
+            cout << "sample_rate" <<sample_rate*1E6 << "captured_samples "<< captured_samples << endl;
+            N = sample_rate*1E6/captured_samples;
+            cout << "N" << TAB << N << TAB << endl;
+            var_1sec = var_samp/sqrt(N);
+            var_1Hz = sqrt(2) * var_1sec;
             
+            sigma_Phi[n][j] = var_samp;
+            N_Phi[n][j] = 20*log10(var_1Hz);
             freq = freq + 1;
             /* */
         } 
@@ -374,8 +400,6 @@ int main() {
     }
     dBm_out.close();
     Phi_out.close();
-    
-    
     
     return 0;
 }
